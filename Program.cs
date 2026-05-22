@@ -70,6 +70,7 @@ namespace AspNetCoreWebApiWithSSE
                 var forecast = Enumerable.Range(1, 1000).Select(index =>
                     new WeatherForecast
                     {
+                        Id = Guid.NewGuid(),
                         Date = DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
                         TemperatureC = Random.Shared.Next(-20, 55),
                         Summary = summaries[Random.Shared.Next(summaries.Length)]
@@ -80,7 +81,13 @@ namespace AspNetCoreWebApiWithSSE
                 {
                     var json = JsonSerializer.Serialize(forecast[i]);
 
+                    // Use the forecast Id as the SSE event id so clients can track messages
+                    await context.Response.WriteAsync($"id: {forecast[i].Id}\n");
+
+                    // Use the forecast summary as the SSE event type so clients can filter by event type if they want
                     await context.Response.WriteAsync($"event: weather\n");
+
+                    // Finally write the forecast data as JSON in the SSE data field...
                     await context.Response.WriteAsync($"data: {json}\n\n");
 
                     await context.Response.Body.FlushAsync();
