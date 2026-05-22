@@ -92,7 +92,7 @@ namespace AspNetCoreWebApiWithSSE
 
                     await context.Response.Body.FlushAsync();
 
-                    await Task.Delay(Random.Shared.Next(1000, 5000));
+                    await Task.Delay(Random.Shared.Next(100, 1500));
                 }
             })
             .WithName("GetWeatherForecastEvents");

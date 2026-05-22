@@ -3,6 +3,7 @@
 <head>
     <meta charset="utf-8" />
     <title>SSE client using Arrow.js Reactivity</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
     <style>
         .led {
             display: inline-block;
@@ -38,7 +39,25 @@
     </style>
 </head>
 <body>
-    <div id="app"></div>
+    <main class="container">
+        <div class="grid">
+            <div id="app"></div>
+            <div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th scope="col">Date</th>
+                            <th scope="col">Weather</th>
+                            <th scope="col">°C</th>
+                            <th scope="col">°F</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
 
     <script type="module">
         import { reactive, html } from "https://esm.sh/@arrow-js/core";
@@ -83,37 +102,51 @@
         // Inline html tagged-template here so Arrow can manage updates...
         //                     ${() => html`<span class="led ${state.connected ? 'led-green' : 'led-red'}" title="${state.connected ? 'Connected' : 'Disconnected'}"></span>`}
         const view = html`
-            <div>
-                <h2>
-                    Weather stream
-                    <span class="${() => state.connected ? "led led-green" : "led led-red" }"></span>
-                </h2>
+                <div>
+                    <h2>
+                        Weather stream
+                        <span class="${() => state.connected ? "led led-green" : "led led-red"}"></span>
+                    </h2>
 
-                <p>
-                    ${() => state.connected ? "Connected" : "Disconnected"}
-                </p>
+                    <p>
+                        ${() => state.connected ? "Connected" : "Disconnected"}
+                    </p>
 
-                <ul>
-                ${() => state.forecasts.map(forecast => html`
-                    <li>
-                        <span style="font-size: 1.5rem;">
-                            ${getWeatherIcon(forecast)}
-                        </span>
+                    <ul>
+                    ${() => state.forecasts.map(forecast => html`
+                        <li>
+                            <span style="font-size: 1.5rem;">
+                                ${getWeatherIcon(forecast)}
+                            </span>
 
-                        <strong>${forecast.Date}</strong>
+                            <strong>${forecast.Date}</strong>
 
-                        ${forecast.TemperatureC}°C
-                        /
-                        ${forecast.TemperatureF}°F
+                            ${forecast.TemperatureC}°C
+                            /
+                            ${forecast.TemperatureF}°F
 
-                        ${forecast.Summary ? `- ${forecast.Summary}` : ""}
-                    </li>
-                `)}
-                </ul>
-            </div>
-          `;
+                            ${forecast.Summary ? `- ${forecast.Summary}` : ""}
+                        </li>
+                    `)}
+                    </ul>
+                </div>
+                `;
 
         view(document.getElementById("app"));
+
+        const tableBody = html`
+            ${() => state.forecasts.map(forecast => html`
+                <tr>
+                    <td>${forecast.Date}</td>
+                    <td class="text-align: center;">${getWeatherIcon(forecast)}</td>
+                    <td class="text-align: right;">${forecast.TemperatureC}°C</td>
+                    <td class="text-align: right;">${forecast.TemperatureF}°F</td>
+                </tr>        
+            `)}
+        `;
+
+        tableBody(document.getElementById("tbody"));
+
 
         // Simply attach to the SSE event source...
         const source = new EventSource("https://localhost:7017/weatherforecastevents");
