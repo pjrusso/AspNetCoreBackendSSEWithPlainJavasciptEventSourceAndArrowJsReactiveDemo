@@ -1,0 +1,15 @@
+# For more info on HTTP files go to https://aka.ms/vs/httpfile
+
+GET https://localhost:7017/weatherforecast
+
+###
+
+GET https://localhost:7017/weatherforecastevents
+Content-Type: text/event-stream
+
+###
+
+GET https://localhost:7017/api/events
+Content-Type: text/event-stream
+
+###

@@ -1,0 +1,139 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>SSE client using Arrow.js Reactivity</title>
+    <style>
+        .led {
+            display: inline-block;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            position: relative;
+            border: 1px solid rgba(0,0,0,0.4);
+            box-shadow: inset 0 -2px 4px rgba(0,0,0,0.35), inset 0 2px 4px rgba(255,255,255,0.2), 0 0 2px rgba(0,0,0,0.5);
+        }
+
+            .led::before {
+                content: '';
+                position: absolute;
+                top: 2px;
+                left: 3px;
+                width: 8px;
+                height: 5px;
+                border-radius: 50%;
+                background: rgba(255,255,255,0.75);
+                transform: rotate(-20deg);
+            }
+
+        .led-green {
+            background: radial-gradient(circle at 30% 30%, #aaffaa 0%, #55ff55 20%, #11bb11 60%, #006600 100%);
+            box-shadow: inset 0 -2px 4px rgba(0,0,0,0.35), inset 0 2px 4px rgba(255,255,255,0.2), 0 0 10px #00ff00, 0 0 20px rgba(0,255,0,0.6);
+        }
+
+        .led-red {
+            background: radial-gradient(circle at 30% 30%, #ffaaaa 0%, #ff5555 20%, #cc1111 60%, #770000 100%);
+            box-shadow: inset 0 -2px 4px rgba(0,0,0,0.35), inset 0 2px 4px rgba(255,255,255,0.2), 0 0 10px #ff0000, 0 0 20px rgba(255,0,0,0.6);
+        }
+    </style>
+</head>
+<body>
+    <div id="app"></div>
+
+    <script type="module">
+        import { reactive, html } from "https://esm.sh/@arrow-js/core";
+
+        // Arrow.js: `html` is a tagged-template function used to create template results
+        // from template literals. When you write `html` followed by a template string
+        // (e.g. html`<div>${value}</div>`), Arrow parses that template and returns
+        // a renderable/template result that the Arrow runtime can efficiently
+        // update. In this demo we prefer inline `html` usage inside reactive
+        // interpolations so Arrow can correctly manage updates.
+        //
+        // `reactive({...})` wraps a plain object and makes its properties
+        // observable. Using ${"() => ..."} inside an Arrow template tells the
+        // renderer to call that function whenever dependencies change and update
+        // only that portion of the DOM.
+        const state = reactive({
+            connected: false,
+            forecasts: []
+        });
+
+        // NOTE: Returning a tagged-template result from a separate helper and
+        // then interpolating that helper (e.g. ${() => renderConnectionState(...)} )
+        // can confuse some template renderers. In this example we inline the
+        // html`<span>...</span>` template directly inside the reactive
+        // interpolation so Arrow can manage it reliably.
+
+        // Get pretty icon...
+        function getWeatherIcon(forecast) {
+            const summary = (forecast.Summary || "").toLowerCase();
+            const temp = forecast.TemperatureC;
+
+            if (summary.includes("freezing") || temp <= 0) return "❄️";
+            if (summary.includes("chilly") || summary.includes("cool") || temp < 10) return "🧥";
+            if (summary.includes("mild")) return "🌤️";
+            if (summary.includes("warm") || summary.includes("balmy")) return "☀️";
+            if (summary.includes("hot") || summary.includes("sweltering") || summary.includes("scorching") || temp >= 28) return "🔥";
+
+            return "🌡️";
+        }
+
+        // Attach to the state variable to produce LI for each value...
+        // Inline html tagged-template here so Arrow can manage updates...
+        //                     ${() => html`<span class="led ${state.connected ? 'led-green' : 'led-red'}" title="${state.connected ? 'Connected' : 'Disconnected'}"></span>`}
+        const view = html`
+            <div>
+                <h2>
+                    Weather stream
+                    <span class="${() => state.connected ? "led led-green" : "led led-red" }"></span>
+                </h2>
+
+                <p>
+                    ${() => state.connected ? "Connected" : "Disconnected"}
+                </p>
+
+                <ul>
+                ${() => state.forecasts.map(forecast => html`
+                    <li>
+                        <span style="font-size: 1.5rem;">
+                            ${getWeatherIcon(forecast)}
+                        </span>
+
+                        <strong>${forecast.Date}</strong>
+
+                        ${forecast.TemperatureC}°C
+                        /
+                        ${forecast.TemperatureF}°F
+
+                        ${forecast.Summary ? `- ${forecast.Summary}` : ""}
+                    </li>
+                `)}
+                </ul>
+            </div>
+          `;
+
+        view(document.getElementById("app"));
+
+        // Simply attach to the SSE event source...
+        const source = new EventSource("https://localhost:7017/weatherforecastevents");
+
+        source.onopen = () => {
+            state.connected = true;
+        };
+
+        source.onerror = () => {
+            state.connected = false;
+        };
+
+        // Listen for 'weather' events, just push onto the reactive state value...
+        source.addEventListener("weather", event => {
+            const forecast = JSON.parse(event.data);
+
+            state.forecasts.push(forecast);
+        });
+    </script>
+</body>
+</html>
+
+
