@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>SSE client using Arrow.js Reactivity and goober</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
+</head>
+<body>
+    <main class="container">
+        <div class="grid">
+            <div id="app"></div>
+            <div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th scope="col">Date</th>
+                            <th scope="col">Weather</th>
+                            <th scope="col">°C</th>
+                            <th scope="col">°F</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <script type="module">
+        import { reactive, html } from "https://esm.sh/@arrow-js/core";
+        import { css, keyframes, glob } from "https://esm.sh/goober";
+        import { createGlobalStyles } from "https://esm.sh/goober/global";
+
+        /*
+            goober feature: createGlobalStyles
+            ----------------------------------
+            The official goober API exposes createGlobalStyles from "goober/global".
+            It is mainly designed for component-tree renderers such as React/Preact,
+            where you would render <GlobalStyles /> near the top of the tree.
+
+            This page is deliberately plain JavaScript + Arrow.js, not React/Preact,
+            so the live global CSS below uses glob(...), which is the direct vanilla
+            equivalent for injecting global rules.
+        */
+        const GlobalStyles = createGlobalStyles`
+            body {
+                margin: 0;
+            }
+        `;
+
+        // goober feature: global styles for plain JavaScript pages.
+        // Theme switching is handled using CSS custom properties on body[data-theme-mode].
+        glob`
+            :root {
+                color-scheme: light;
+                --page-bg: #f6f8fb;
+                --panel-bg: #ffffff;
+                --panel-border: #d7dee8;
+                --text-colour: #18202a;
+                --muted-colour: #5f6c7b;
+                --shadow-colour: rgba(15, 23, 42, 0.12);
+                --table-row-hover: #eef4ff;
+                --cold-bg: #e3f2fd;
+                --cold-border: #2196f3;
+                --mild-bg: #e8f5e9;
+                --mild-border: #4caf50;
+                --warm-bg: #fbe9e7;
+                --warm-border: #ff5722;
+                --button-bg: #263f73;
+                --button-text: #ffffff;
+            }
+
+            body[data-theme-mode="dark"] {
+                color-scheme: dark;
+                --page-bg: #0f172a;
+                --panel-bg: #111827;
+                --panel-border: #334155;
+                --text-colour: #e5e7eb;
+                --muted-colour: #a6adbb;
+                --shadow-colour: rgba(0, 0, 0, 0.45);
+                --table-row-hover: #1e293b;
+                --cold-bg: #102a43;
+                --cold-border: #60a5fa;
+                --mild-bg: #123524;
+                --mild-border: #4ade80;
+                --warm-bg: #431b12;
+                --warm-border: #fb923c;
+                --button-bg: #7dd3fc;
+                --button-text: #082f49;
+            }
+
+            html, body {
+                min-height: 100%;
+            }
+
+            body {
+                background: var(--page-bg);
+                color: var(--text-colour);
+                transition: background 220ms ease, color 220ms ease;
+            }
+
+            main.container {
+                padding-top: 2rem;
+            }
+
+            h2 {
+                display: flex;
+                gap: 0.65rem;
+                align-items: center;
+                margin-bottom: 0.35rem;
+            }
+
+            ul {
+                list-style: none;
+                padding-left: 0;
+            }
+
+            table {
+                background: var(--panel-bg);
+                border: 1px solid var(--panel-border);
+                border-radius: 14px;
+                overflow: hidden;
+                box-shadow: 0 8px 22px var(--shadow-colour);
+            }
+
+            th, td {
+                color: var(--text-colour);
+            }
+        `;
+
+        // goober feature: reusable keyframe animations.
+        const pulseGlow = keyframes`
+            0%, 100% {
+                transform: scale(1);
+                filter: brightness(1);
+            }
+            50% {
+                transform: scale(1.12);
+                filter: brightness(1.25);
+            }
+        `;
+
+        const slideIn = keyframes`
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        `;
+
+        const weatherIconBounce = keyframes`
+            0%, 100% {
+                transform: translateY(0);
+            }
+            50% {
+                transform: translateY(-3px);
+            }
+        `;
+
+        const state = reactive({
+            connected: false,
+            theme: localStorage.getItem("weather-demo-theme") || "light",
+            forecasts: []
+        });
+
+        document.body.dataset.themeMode = state.theme;
+
+        function toggleTheme() {
+            state.theme = state.theme === "light" ? "dark" : "light";
+            document.body.dataset.themeMode = state.theme;
+            localStorage.setItem("weather-demo-theme", state.theme);
+        }
+
+        function getWeatherIcon(forecast) {
+            const summary = (forecast.Summary || "").toLowerCase();
+            const temp = forecast.TemperatureC;
+
+            if (summary.includes("freezing") || temp <= 0) return "❄️";
+            if (summary.includes("chilly") || summary.includes("cool") || temp < 10) return "🧥";
+            if (summary.includes("mild")) return "🌤️";
+            if (summary.includes("warm") || summary.includes("balmy")) return "☀️";
+            if (summary.includes("hot") || summary.includes("sweltering") || summary.includes("scorching") || temp >= 28) return "🔥";
+
+            return "🌡️";
+        }
+
+        function getTemperatureBand(forecast) {
+            if (forecast.TemperatureC < 10) return "cold";
+            if (forecast.TemperatureC < 20) return "mild";
+            return "warm";
+        }
+
+        const classCache = new Map();
+
+        function cachedClass(key, factory) {
+            if (!classCache.has(key)) {
+                classCache.set(key, factory());
+            }
+
+            return classCache.get(key);
+        }
+
+        const panelClass = css`
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 14px;
+            padding: 1rem;
+            box-shadow: 0 8px 22px var(--shadow-colour);
+        `;
+
+        const toolbarClass = css`
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            margin-bottom: 0.75rem;
+        `;
+
+        const themeButtonClass = css`
+            border: 0;
+            border-radius: 999px;
+            background: var(--button-bg);
+            color: var(--button-text);
+            padding: 0.45rem 0.75rem;
+            cursor: pointer;
+            font-size: 0.9rem;
+            width: auto;
+
+            &:hover {
+                transform: translateY(-1px);
+                box-shadow: 0 6px 14px var(--shadow-colour);
+            }
+        `;
+
+        const mutedTextClass = css`
+            color: var(--muted-colour);
+            margin-top: 0;
+        `;
+
+        const emptyStateClass = css`
+            color: var(--muted-colour);
+            border: 1px dashed var(--panel-border);
+            border-radius: 12px;
+            padding: 0.85rem;
+            margin-top: 1rem;
+        `;
+
+        const iconClass = css`
+            display: inline-block;
+            font-size: 1.5rem;
+            animation: ${weatherIconBounce} 900ms ease-in-out infinite;
+        `;
+
+        function ledClass(connected) {
+            return cachedClass(`led-${connected}`, () => css`
+                display: inline-block;
+                width: 18px;
+                height: 18px;
+                border-radius: 50%;
+                position: relative;
+                border: 1px solid rgba(0,0,0,0.4);
+                background: ${connected
+                    ? "radial-gradient(circle at 30% 30%, #aaffaa 0%, #55ff55 20%, #11bb11 60%, #006600 100%)"
+                    : "radial-gradient(circle at 30% 30%, #ffaaaa 0%, #ff5555 20%, #cc1111 60%, #770000 100%)"};
+                box-shadow: ${connected
+                    ? "inset 0 -2px 4px rgba(0,0,0,0.35), inset 0 2px 4px rgba(255,255,255,0.2), 0 0 10px #00ff00, 0 0 20px rgba(0,255,0,0.6)"
+                    : "inset 0 -2px 4px rgba(0,0,0,0.35), inset 0 2px 4px rgba(255,255,255,0.2), 0 0 10px #ff0000, 0 0 20px rgba(255,0,0,0.6)"};
+                animation: ${connected ? `${pulseGlow} 1.4s ease-in-out infinite` : "none"};
+
+                &::before {
+                    content: '';
+                    position: absolute;
+                    top: 2px;
+                    left: 3px;
+                    width: 8px;
+                    height: 5px;
+                    border-radius: 50%;
+                    background: rgba(255,255,255,0.75);
+                    transform: rotate(-20deg);
+                }
+            `);
+        }
+
+        function forecastClass(forecast) {
+            const band = getTemperatureBand(forecast);
+
+            return cachedClass(`forecast-${band}`, () => css`
+                padding: 10px;
+                margin-bottom: 8px;
+                border-left: 6px solid var(--${band}-border);
+                background: var(--${band}-bg);
+                border-radius: 10px;
+                animation: ${slideIn} 240ms ease-out both;
+                transition: transform 180ms ease, box-shadow 180ms ease, background 220ms ease;
+
+                &:hover {
+                    transform: translateX(8px);
+                    box-shadow: 0 6px 16px var(--shadow-colour);
+                }
+            `);
+        }
+
+        function tableRowClass(forecast) {
+            const band = getTemperatureBand(forecast);
+
+            return cachedClass(`table-row-${band}`, () => css`
+                border-left: 5px solid var(--${band}-border);
+                animation: ${slideIn} 240ms ease-out both;
+
+                &:hover {
+                    background: var(--table-row-hover);
+                }
+            `);
+        }
+
+        const alignCentreClass = css`
+            text-align: center;
+        `;
+
+        const alignRightClass = css`
+            text-align: right;
+        `;
+
+        function addSampleForecast() {
+            const samples = [
+                { Date: "2026-05-23", TemperatureC: 6, TemperatureF: 43, Summary: "Chilly" },
+                { Date: "2026-05-24", TemperatureC: 15, TemperatureF: 59, Summary: "Mild" },
+                { Date: "2026-05-25", TemperatureC: 24, TemperatureF: 75, Summary: "Warm" },
+                { Date: "2026-05-26", TemperatureC: 30, TemperatureF: 86, Summary: "Hot" }
+            ];
+
+            state.forecasts.push(samples[state.forecasts.length % samples.length]);
+        }
+
+        const view = html`
+            <div class="${panelClass}">
+                <div class="${toolbarClass}">
+                    <div>
+                        <h2>
+                            Weather stream
+                            <span class="${() => ledClass(state.connected)}"
+                                  title="${() => state.connected ? "Connected" : "Disconnected"}"></span>
+                        </h2>
+                        <p class="${mutedTextClass}">
+                            ${() => state.connected ? "Connected to SSE" : "Disconnected from SSE"}
+                        </p>
+                    </div>
+
+                    <button type="button" class="${themeButtonClass}" @click="${toggleTheme}">
+                        ${() => state.theme === "light" ? "Dark mode" : "Light mode"}
+                    </button>
+                </div>
+
+                <button type="button" class="${themeButtonClass}" @click="${addSampleForecast}">
+                    Add sample forecast
+                </button>
+
+                ${() => state.forecasts.length === 0
+                    ? html`<p class="${emptyStateClass}">Waiting for weather events...</p>`
+                    : html`
+                        <ul>
+                            ${() => state.forecasts.map(forecast => html`
+                                <li class="${forecastClass(forecast)}">
+                                    <span class="${iconClass}">
+                                        ${getWeatherIcon(forecast)}
+                                    </span>
+
+                                    <strong>${forecast.Date}</strong>
+
+                                    ${forecast.TemperatureC}°C
+                                    /
+                                    ${forecast.TemperatureF}°F
+
+                                    ${forecast.Summary ? `- ${forecast.Summary}` : ""}
+                                </li>
+                            `)}
+                        </ul>
+                    `}
+            </div>
+        `;
+
+        view(document.getElementById("app"));
+
+        const tableBody = html`
+            ${() => state.forecasts.map(forecast => html`
+                <tr class="${tableRowClass(forecast)}">
+                    <td>${forecast.Date}</td>
+                    <td class="${alignCentreClass}">${getWeatherIcon(forecast)}</td>
+                    <td class="${alignRightClass}">${forecast.TemperatureC}°C</td>
+                    <td class="${alignRightClass}">${forecast.TemperatureF}°F</td>
+                </tr>
+            `)}
+        `;
+
+        tableBody(document.getElementById("tbody"));
+
+        const source = new EventSource("https://localhost:7017/weatherforecastevents");
+
+        source.onopen = () => {
+            state.connected = true;
+        };
+
+        source.onerror = () => {
+            state.connected = false;
+        };
+
+        source.addEventListener("weather", event => {
+            const forecast = JSON.parse(event.data);
+            state.forecasts.push(forecast);
+        });
+    </script>
+</body>
+</html>
