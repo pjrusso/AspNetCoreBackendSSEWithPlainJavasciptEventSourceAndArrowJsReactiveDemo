@@ -61,6 +61,7 @@
 
     <script type="module">
         import { reactive, html } from "https://esm.sh/@arrow-js/core";
+        import { css } from "https://esm.sh/goober";
 
         // Arrow.js: `html` is a tagged-template function used to create template results
         // from template literals. When you write `html` followed by a template string
@@ -90,10 +91,10 @@
             const temp = forecast.TemperatureC;
 
             if (summary.includes("freezing") || temp <= 0) return "❄️";
-            if (summary.includes("chilly") || summary.includes("cool") || temp < 10) return "🧥";
+            if (summary.includes("chilly") || temp < 10) return "🧥";
             if (summary.includes("mild")) return "🌤️";
-            if (summary.includes("warm") || summary.includes("balmy")) return "☀️";
-            if (summary.includes("hot") || summary.includes("sweltering") || summary.includes("scorching") || temp >= 28) return "🔥";
+            if (summary.includes("warm")) return "☀️";
+            if (summary.includes("hot") || temp >= 28) return "🔥";
 
             return "🌡️";
         }
@@ -101,36 +102,92 @@
         // Attach to the state variable to produce LI for each value...
         // Inline html tagged-template here so Arrow can manage updates...
         //                     ${() => html`<span class="led ${state.connected ? 'led-green' : 'led-red'}" title="${state.connected ? 'Connected' : 'Disconnected'}"></span>`}
+
+        // Dynamically generate CSS using goober
+        function forecastClass(forecast) {
+
+            let borderColour = "#999";
+            let background = "#f5f5f5";
+
+            if (forecast.TemperatureC < 10) {
+                borderColour = "#2196F3";
+                background = "#E3F2FD";
+            }
+            else if (forecast.TemperatureC < 20) {
+                borderColour = "#4CAF50";
+                background = "#E8F5E9";
+            }
+            else {
+                borderColour = "#FF5722";
+                background = "#FBE9E7";
+            }
+
+            return css`
+                padding:10px;
+                margin-bottom:8px;
+                border-left:6px solid ${borderColour};
+                background:${background};
+                border-radius:8px;
+
+                transition:all 0.3s;
+
+                &:hover {
+                    transform:translateX(8px);
+                    box-shadow:0 3px 10px rgba(0,0,0,0.2);
+                }
+            `;
+        }
+
         const view = html`
-                <div>
-                    <h2>
-                        Weather stream
-                        <span class="${() => state.connected ? "led led-green" : "led led-red"}"></span>
-                    </h2>
+            <div>
 
-                    <p>
-                        ${() => state.connected ? "Connected" : "Disconnected"}
-                    </p>
+                <h2>
+                    Weather stream
+                    <span class="${() =>
+                state.connected
+                    ? "led led-green"
+                    : "led led-red"}">
+                    </span>
+                </h2>
 
-                    <ul>
-                    ${() => state.forecasts.map(forecast => html`
-                        <li>
-                            <span style="font-size: 1.5rem;">
+                <p>
+                    ${() => state.connected
+                ? "Connected"
+                : "Disconnected"}
+                </p>
+
+                <ul>
+
+                ${() =>
+                state.forecasts.map(forecast => html`
+
+                        <li class="${forecastClass(forecast)}">
+
+                            <span style="font-size:1.5rem">
                                 ${getWeatherIcon(forecast)}
                             </span>
 
-                            <strong>${forecast.Date}</strong>
+                            <strong>
+                                ${forecast.Date}
+                            </strong>
 
                             ${forecast.TemperatureC}°C
                             /
                             ${forecast.TemperatureF}°F
 
-                            ${forecast.Summary ? `- ${forecast.Summary}` : ""}
+                            ${forecast.Summary
+                        ? `- ${forecast.Summary}`
+                        : ""}
+
                         </li>
-                    `)}
-                    </ul>
-                </div>
-                `;
+
+                    `)
+            }
+
+                </ul>
+
+            </div>
+        `;
 
         view(document.getElementById("app"));
 
@@ -141,7 +198,7 @@
                     <td class="text-align: center;">${getWeatherIcon(forecast)}</td>
                     <td class="text-align: right;">${forecast.TemperatureC}°C</td>
                     <td class="text-align: right;">${forecast.TemperatureF}°F</td>
-                </tr>        
+                </tr>
             `)}
         `;
 
